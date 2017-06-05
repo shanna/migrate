@@ -1,6 +1,7 @@
 package pq
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"database/sql"
 	"fmt"
@@ -36,15 +37,15 @@ lock table schema_migrations in exclusive mode;
 `
 
 const MigrateSQL = `
-select name, completed, encode(checksum, 'hex') as checksum
+select name, completed, checksum
 from schema_migrations
-where name = $1;
+where name = $1::text;
 `
 
 type migrate struct {
 	name      string
 	completed time.Time
-	checksum  string
+	checksum  []byte
 }
 
 type Postgres struct {
@@ -83,7 +84,7 @@ func (p *Postgres) Commit() error {
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
 	if err := p.db.Ping(); err != nil {
-		return err
+		return fmt.Errorf("ping failed %s", err)
 	}
 
 	// Shame you can't stream statements to the driver as well.
@@ -95,30 +96,35 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return err
 	}
 
-	// TODO: Should the same name but a different cheksum
-	row := p.tx.QueryRow(MigrateSQL, name, checksum)
-	if row != nil {
+	rows, err := p.tx.Query(MigrateSQL, name)
+	if err != nil {
+		return fmt.Errorf("schema_migrations select previous %s", err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
 		previous := migrate{}
-		if err := row.Scan(&previous.name, &previous.completed, &previous.checksum); err != nil {
-			return err
+		err = rows.Scan(&previous.name, &previous.completed, &previous.checksum)
+		if err != nil {
+			return fmt.Errorf("schema_migrations scan previous %s", err)
 		}
 
-		// TODO: Derp. How do I compare the against the bytes I know are in hash.Hash somewhere?
-		if fmt.Sprintf("%x", checksum) != previous.checksum {
-			return fmt.Errorf("migration '%s' has been altered since it was run on %s.", previous.name, previous.completed)
+		if !bytes.Equal(checksum.Sum(nil), previous.checksum) {
+			return fmt.Errorf("migration '%s' has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
 		// TODO: Skip log.
 		return nil
 	}
+	rows.Close()
 
 	if _, err := p.tx.Exec(string(statements)); err != nil {
 		// TODO: Not all errors are the same. These ones are problems with your migration.
 		return err
 	}
 
-	if _, err = p.tx.Exec(`insert into schema migrations (name, checksum) values ($1, $2)`, name, checksum); err != nil {
-		return err
+	if _, err = p.tx.Exec(`insert into schema_migrations (name, checksum) values ($1::text, $2::bytea)`, name, checksum.Sum(nil)); err != nil {
+		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
 	return nil
