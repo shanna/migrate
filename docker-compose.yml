@@ -15,3 +15,4 @@ services:
     volumes:
       - .:/go/src/github.com/shanna/migrate
     working_dir: /go/src/github.com/shanna/migrate
+    tty: true
