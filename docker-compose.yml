@@ -1,0 +1,17 @@
+version: "2"
+services:
+  postgres:
+    image: postgres:alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432:5432
+  migrate:
+    image: golang
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres.local:5432/example?sslmode=disable
+    links:
+      - postgres:postgres.local
+    volumes:
+      - .:/go/src/github.com/shanna/migrate
+    working_dir: /go/src/github.com/shanna/migrate

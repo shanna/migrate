@@ -45,7 +45,7 @@ func (t *TestMigrator) Migrate(name string, data io.Reader) error {
 // Tests
 
 func TestMigrate(t *testing.T) {
-	testdata := filepath.Join("testdata")
+	testdata := filepath.Join("_testdata")
 
 	migrator, err := migrate.New("test", "config")
 	if err != nil {
