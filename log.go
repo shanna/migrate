@@ -1,31 +1,21 @@
 package migrate
 
-import "go.uber.org/zap"
+import golog "log"
 
-type Logger interface {
-	Info(legacy string, kv ...interface{}) error
+// LoggerFunc is an INFO logging function. Everything else is an error.
+type LoggerFunc func(format string, args ...interface{})
+
+var log = LoggerFunc(LoggerLog)
+
+// SetLogger
+func Logger(f LoggerFunc) {
+	log = f
 }
 
-func LogDefault() Logger {
-	zap, _ := LogZap()
-	return zap
-}
+// LoggerNil will suppress logs.
+func LoggerNil(format string, args ...interface{}) {}
 
-// Zap concrete implementation.
-type logzap struct {
-	zap   *zap.Logger
-	sugar *zap.SugaredLogger
-}
-
-func LogZap() (Logger, error) {
-	zap, err := zap.NewProduction()
-	if err != nil {
-		return nil, err
-	}
-	return &logzap{zap, zap.Sugar()}, nil
-}
-
-func (z *logzap) Info(legacy string, kv ...interface{}) error {
-	z.sugar.Infow(legacy, kv...)
-	return nil
+// LoggerLog logs to log.Printf
+func LoggerLog(format string, args ...interface{}) {
+	golog.Printf(format, args...)
 }

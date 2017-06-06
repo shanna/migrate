@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/shanna/migrate"
@@ -26,13 +27,9 @@ func main() {
 	m, err := migrate.New(config.Driver, config.Config)
 	exitOnError(err)
 
-	/*
-		if args := len(os.Args); args != 1 {
-			exitOnError(fmt.Errorf("expected exactly 1 argument (migration directory) but got %d", args))
-		}
-	*/
 	if err := m.Dir(config.Arg(0)); err != nil {
-		fmt.Println(err)
+		log.Printf("error\t%s\n", err)
+		os.Exit(1)
 	}
 }
 

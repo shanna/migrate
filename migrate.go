@@ -11,8 +11,6 @@ import (
 
 const ModeExecutable os.FileMode = 0100
 
-var logger = LogDefault()
-
 type Migrate struct {
 	driver string
 	config string
@@ -39,10 +37,12 @@ func (m *Migrate) Dir(dir string) error {
 
 		switch mode := file.Mode(); {
 		case mode.IsRegular() && mode&ModeExecutable != 0:
+			log("execute\t%s\n", path)
 			if err = fileExecute(migrator, path); err != nil {
 				return err
 			}
 		case mode.IsRegular():
+			log("read\t%s\n", path)
 			if err := fileOpen(migrator, path); err != nil {
 				return err
 			}
