@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 
 	"github.com/shanna/migrate"
@@ -24,10 +25,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	m, err := migrate.New(config.Driver, config.Config)
+	driver, err := url.Parse(config.Driver)
 	exitOnError(err)
 
-	if err := m.Dir(config.Arg(0)); err != nil {
+	migrator, err := migrate.New(driver)
+	exitOnError(err)
+
+	if err := migrator.Dir(config.Dir); err != nil {
 		log.Printf("error\t%s\n", err)
 		os.Exit(1)
 	}

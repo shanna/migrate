@@ -1,3 +1,4 @@
+begin
 001-test.sql:select '001';
 002-test.sql:select '002';
 003-test.sh:select '003';

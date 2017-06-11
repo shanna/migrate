@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
 	"testing"
 
@@ -15,17 +16,22 @@ import (
 // Test driver.
 
 func init() {
-	driver.Register("test", &TestDriver{})
+	driver.Register("test", NewTestMigrator)
 }
 
 var buffer bytes.Buffer
 
-type TestDriver struct{}
 type TestMigrator struct{}
 
-func (t *TestDriver) Begin(config string) (driver.Migrator, error) {
+func NewTestMigrator(config *url.URL) (driver.Migrator, error) {
 	return &TestMigrator{}, nil
 }
+
+func (t *TestMigrator) Begin() error {
+	buffer.WriteString("begin\n")
+	return nil
+}
+
 func (t *TestMigrator) Rollback() error {
 	buffer.WriteString("rollback\n")
 	return nil
@@ -49,8 +55,9 @@ func (t *TestMigrator) Migrate(name string, data io.Reader) error {
 
 func TestMigrate(t *testing.T) {
 	testdata := filepath.Join("_testdata")
+	config, _ := url.Parse("test://")
 
-	migrator, err := migrate.New("test", "config")
+	migrator, err := migrate.New(config)
 	if err != nil {
 		t.Fatal(err)
 	}

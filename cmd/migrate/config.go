@@ -9,30 +9,31 @@ import (
 type Config struct {
 	Version bool
 	Driver  string
-	Config  string
+	Dir     string
 }
 
 var defaults = Config{
 	Version: false,
-	Driver:  "postgres",
-	Config:  "postgres://localhost:5432?sslmode=disable",
+	Driver:  "postgres://localhost:5432?sslmode=disable",
+	Dir:     ".",
 }
 
 func NewConfig() (*Config, error) {
 	config := defaults
-
 	flag.StringVar(&config.Driver, "driver", defaults.Driver, "ENV[MIGRATE_DRIVER] Migration driver.")
-	flag.StringVar(&config.Config, "config", defaults.Driver, "ENV[MIGRATE_CONFIG] Migration driver config.")
-
+	flag.StringVar(&config.Dir, "dir", defaults.Dir, "ENV[MIGRATE_DIR] Migration directory.")
 	flag.BoolVar(&config.Version, "version", false, "Version information.")
 
 	flagenv.Prefix = "MIGRATE_"
 	flagenv.Parse()
 	flag.Parse()
 
-	return &config, nil
-}
+	if config.Driver == defaults.Driver && flag.Arg(1) != "" {
+		config.Driver = flag.Arg(1)
+	}
+	if config.Dir == defaults.Dir && flag.Arg(2) != "" {
+		config.Dir = flag.Arg(2)
+	}
 
-func (c Config) Arg(i int) string {
-	return flag.Arg(i)
+	return &config, nil
 }

@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"io/ioutil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,20 +13,22 @@ import (
 const ModeExecutable os.FileMode = 0100
 
 type Migrate struct {
-	driver string
-	config string
+	migrator driver.Migrator
 }
 
-func New(driver, config string) (*Migrate, error) {
-	return &Migrate{driver, config}, nil
+func New(config *url.URL) (*Migrate, error) {
+	migrator, err := driver.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return &Migrate{migrator}, nil
 }
 
 func (m *Migrate) Dir(dir string) error {
-	migrator, err := driver.Begin(m.driver, m.config)
-	if err != nil {
+	if err := m.migrator.Begin(); err != nil {
 		return err
 	}
-	defer migrator.Rollback()
+	defer m.migrator.Rollback()
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -38,18 +41,18 @@ func (m *Migrate) Dir(dir string) error {
 		switch mode := file.Mode(); {
 		case mode.IsRegular() && mode&ModeExecutable != 0:
 			log("execute\t%s\n", path)
-			if err = fileExecute(migrator, path); err != nil {
+			if err = fileExecute(m.migrator, path); err != nil {
 				return err
 			}
 		case mode.IsRegular():
 			log("read\t%s\n", path)
-			if err := fileOpen(migrator, path); err != nil {
+			if err := fileOpen(m.migrator, path); err != nil {
 				return err
 			}
 		}
 	}
 
-	return migrator.Commit()
+	return m.migrator.Commit()
 }
 
 func fileExecute(migrator driver.Migrator, path string) error {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -14,16 +15,9 @@ import (
 )
 
 func init() {
-	postgres := Driver{}
-	driver.Register("pg", &postgres)
-	driver.Register("postgres", &postgres)
-	driver.Register("postgresql", &postgres)
-}
-
-type Driver struct{}
-
-func (d *Driver) Begin(config string) (driver.Migrator, error) {
-	return Begin(config)
+	driver.Register("pg", New)
+	driver.Register("postgres", New)
+	driver.Register("postgresql", New)
 }
 
 const SetupSQL = `
@@ -49,13 +43,14 @@ type migrate struct {
 }
 
 type Postgres struct {
-	db *sql.DB
-	tx *sql.Tx
+	config *url.URL
+	db     *sql.DB
+	tx     *sql.Tx
 	// closed/mutex
 }
 
-func Begin(config string) (*Postgres, error) {
-	connection, err := sql.Open("postgres", config)
+func New(config *url.URL) (driver.Migrator, error) {
+	connection, err := sql.Open("postgres", config.String())
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +64,27 @@ func Begin(config string) (*Postgres, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer transaction.Rollback()
 	if _, err = transaction.Exec(SetupSQL); err != nil {
 		return nil, err
 	}
+	transaction.Commit()
 
-	return &Postgres{connection, transaction}, nil
+	return &Postgres{db: connection, config: config}, nil
+}
+
+func (p *Postgres) Begin() error {
+	if err := p.db.Ping(); err != nil {
+		return fmt.Errorf("ping failed %s", err)
+	}
+
+	transaction, err := p.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	p.tx = transaction
+	return nil
 }
 
 func (p *Postgres) Rollback() error {
