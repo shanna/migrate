@@ -1,6 +1,7 @@
 package migrate_test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -17,6 +18,8 @@ func init() {
 	driver.Register("test", &TestDriver{})
 }
 
+var buffer bytes.Buffer
+
 type TestDriver struct{}
 type TestMigrator struct{}
 
@@ -24,12 +27,12 @@ func (t *TestDriver) Begin(config string) (driver.Migrator, error) {
 	return &TestMigrator{}, nil
 }
 func (t *TestMigrator) Rollback() error {
-	fmt.Println("rollback called")
+	buffer.WriteString("rollback\n")
 	return nil
 }
 
 func (t *TestMigrator) Commit() error {
-	fmt.Println("commit called")
+	buffer.WriteString("commit\n")
 	return nil
 }
 
@@ -38,7 +41,7 @@ func (t *TestMigrator) Migrate(name string, data io.Reader) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: %s", name, bytes)
+	buffer.WriteString(fmt.Sprintf("%s:%s", name, bytes))
 	return nil
 }
 
@@ -52,7 +55,12 @@ func TestMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := migrator.Dir(testdata); err != nil {
+	if err := migrator.Dir(filepath.Join(testdata, "input")); err != nil {
 		t.Fatal(err)
+	}
+
+	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "golden"))
+	if !bytes.Equal(buffer.Bytes(), golden) {
+		t.Error("migration doesn't match golden")
 	}
 }
