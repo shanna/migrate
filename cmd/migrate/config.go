@@ -28,11 +28,11 @@ func NewConfig() (*Config, error) {
 	flagenv.Parse()
 	flag.Parse()
 
-	if config.Driver == defaults.Driver && flag.Arg(1) != "" {
-		config.Driver = flag.Arg(1)
+	if flag.Arg(0) != "" {
+		config.Driver = flag.Arg(0)
 	}
-	if config.Dir == defaults.Dir && flag.Arg(2) != "" {
-		config.Dir = flag.Arg(2)
+	if flag.Arg(1) != "" {
+		config.Dir = flag.Arg(1)
 	}
 
 	return &config, nil
