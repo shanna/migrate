@@ -60,6 +60,10 @@ func Begin(config string) (*Postgres, error) {
 		return nil, err
 	}
 
+	if err := connection.Ping(); err != nil {
+		return nil, fmt.Errorf("ping failed %s", err)
+	}
+
 	// Migration table.
 	transaction, err := connection.Begin()
 	if err != nil {
@@ -92,7 +96,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 	reader := io.TeeReader(data, checksum)
 	statements, err := ioutil.ReadAll(reader)
 	if err != nil {
-		p.tx.Rollback() // TODO: What happens here,
+		p.tx.Rollback()
 		return err
 	}
 

@@ -24,12 +24,12 @@ func (t *TestDriver) Begin(config string) (driver.Migrator, error) {
 	return &TestMigrator{}, nil
 }
 func (t *TestMigrator) Rollback() error {
-	fmt.Println("Rollback called")
+	fmt.Println("rollback called")
 	return nil
 }
 
 func (t *TestMigrator) Commit() error {
-	fmt.Println("Commit called")
+	fmt.Println("commit called")
 	return nil
 }
 
