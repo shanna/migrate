@@ -6,7 +6,7 @@ Bare bones Go migration library and command.
 
 * Migrate anything not just SQL by implementing the abstract driver interface.
 * Plain files are streamed to migration driver.
-* Executabes files are run and stream STDOUT to migration driver.
+* Executabe files are run and stream STDOUT to migration driver.
 
 ## Drivers
 
