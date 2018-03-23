@@ -1,6 +1,8 @@
 package migrate
 
-import golog "log"
+import (
+	golog "log"
+)
 
 // LoggerFunc is an INFO logging function. Everything else is an error.
 type LoggerFunc func(format string, args ...interface{})

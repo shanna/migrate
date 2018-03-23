@@ -2,15 +2,17 @@ package pq
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha512"
-	"database/sql"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/url"
+	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx"
 	"github.com/shanna/migrate/driver"
 )
 
@@ -44,18 +46,94 @@ type migrate struct {
 
 type Postgres struct {
 	config *url.URL
-	db     *sql.DB
-	tx     *sql.Tx
-	// closed/mutex
+	db     *pgx.Conn
+	tx     *pgx.Tx
+	// closed/mutex? The driver provides synchronization for calls but the pq implementation on its own isn't safe.
+	error Error
+}
+
+type Error struct { // Common?
+	Message    string
+	File       string
+	Line       int
+	Near       string
+	NearMarker int
+}
+
+func (e Error) Error() string {
+	return fmt.Sprintf("%s\n\nError: %s\nFile:  %s\nLine:  %d\nNear:  %s\n       %s",
+		e.Message,
+		e.Message,
+		e.File,
+		e.Line,
+		e.Near,
+		strings.Repeat(" ", e.NearMarker)+"^",
+	)
+}
+
+// Both pq and pgx don't return the original query in the error structure so in the short term
+// dig it out of the logs.
+func (p *Postgres) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
+	err, ok := data["err"]
+	if !ok {
+		return
+	}
+
+	pgxErr, ok := err.(pgx.PgError)
+	if !ok {
+		return
+	}
+	position := int(pgxErr.Position - 1)
+
+	sql, ok := data["sql"].(string)
+	if !ok {
+		return
+	}
+
+	length := len(sql)
+	if length > math.MaxInt32 || position < 0 || position >= length {
+		return
+	}
+
+	start := strings.LastIndex(sql[:position], "\n")
+	if start == -1 {
+		start = 0
+	} else {
+		start += 1
+	}
+
+	end := strings.Index(sql[position:], "\n")
+	if end == -1 {
+		end = length
+	} else {
+		end += position
+	}
+
+	p.error = Error{
+		Message:    pgxErr.Message,
+		Line:       strings.Count(sql[:start], "\n") + 1,
+		Near:       sql[start:end],
+		NearMarker: position - start,
+	}
 }
 
 func New(config *url.URL) (driver.Migrator, error) {
-	connection, err := sql.Open("postgres", config.String())
+	connConfig, err := pgx.ParseConnectionString(config.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := connection.Ping(); err != nil {
+	pg := &Postgres{}
+
+	connConfig.LogLevel = pgx.LogLevelDebug
+	connConfig.Logger = pg
+
+	connection, err := pgx.Connect(connConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := connection.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("ping failed %s", err)
 	}
 
@@ -70,11 +148,14 @@ func New(config *url.URL) (driver.Migrator, error) {
 	}
 	transaction.Commit()
 
-	return &Postgres{db: connection, config: config}, nil
+	pg.db = connection
+	pg.config = config
+
+	return pg, nil
 }
 
 func (p *Postgres) Begin() error {
-	if err := p.db.Ping(); err != nil {
+	if err := p.db.Ping(context.Background()); err != nil {
 		return fmt.Errorf("ping failed %s", err)
 	}
 
@@ -98,7 +179,7 @@ func (p *Postgres) Commit() error {
 }
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
-	if err := p.db.Ping(); err != nil {
+	if err := p.db.Ping(context.Background()); err != nil {
 		return fmt.Errorf("ping failed %s", err)
 	}
 
@@ -135,6 +216,10 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 
 	if _, err := p.tx.Exec(string(statements)); err != nil {
 		// TODO: Not all errors are the same. These ones are problems with your migration.
+		if _, ok := err.(pgx.PgError); ok {
+			p.error.File = name
+			return p.error
+		}
 		return err
 	}
 
