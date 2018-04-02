@@ -1,4 +1,4 @@
-package pq_test
+package postgres_test
 
 import (
 	"database/sql"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
-	driver "github.com/shanna/migrate/driver/pq"
+	driver "github.com/shanna/migrate/driver/postgres"
 )
 
 var config = "postgres://migrate:migrate@localhost:5432/migrate?sslmode=disable"

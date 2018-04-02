@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/shanna/migrate"
-	_ "github.com/shanna/migrate/driver/pq"
+	_ "github.com/shanna/migrate/driver/postgres"
 )
 
 var (
