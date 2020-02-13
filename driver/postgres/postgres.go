@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4"
 	"github.com/shanna/migrate/driver"
 )
 
@@ -47,7 +49,7 @@ type migrate struct {
 type Postgres struct {
 	config *url.URL
 	db     *pgx.Conn
-	tx     *pgx.Tx
+	tx     pgx.Tx
 	// closed/mutex? The driver provides synchronization for calls but the pq implementation on its own isn't safe.
 	error Error
 }
@@ -73,13 +75,13 @@ func (e Error) Error() string {
 
 // Both pq and pgx don't return the original query in the error structure so in the short term
 // dig it out of the logs.
-func (p *Postgres) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
+func (p *Postgres) Log(_ context.Context, level pgx.LogLevel, msg string, data map[string]interface{}) {
 	err, ok := data["err"]
 	if !ok {
 		return
 	}
 
-	pgxErr, ok := err.(pgx.PgError)
+	pgxErr, ok := err.(*pgconn.PgError)
 	if !ok {
 		return
 	}
@@ -99,7 +101,7 @@ func (p *Postgres) Log(level pgx.LogLevel, msg string, data map[string]interface
 	if start == -1 {
 		start = 0
 	} else {
-		start += 1
+		start++
 	}
 
 	end := strings.Index(sql[position:], "\n")
@@ -118,35 +120,37 @@ func (p *Postgres) Log(level pgx.LogLevel, msg string, data map[string]interface
 }
 
 func New(config *url.URL) (driver.Migrator, error) {
-	connConfig, err := pgx.ParseConnectionString(config.String())
+	connConfig, err := pgx.ParseConfig(config.String())
 	if err != nil {
 		return nil, err
 	}
+
+	ctx := context.Background()
 
 	pg := &Postgres{}
 
 	connConfig.LogLevel = pgx.LogLevelDebug
 	connConfig.Logger = pg
 
-	connection, err := pgx.Connect(connConfig)
+	connection, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := connection.Ping(context.Background()); err != nil {
+	if err := connection.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("ping failed %s", err)
 	}
 
 	// Migration table.
-	transaction, err := connection.Begin()
+	transaction, err := connection.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer transaction.Rollback()
-	if _, err = transaction.Exec(SetupSQL); err != nil {
+	defer transaction.Rollback(ctx)
+	if _, err = transaction.Exec(ctx, SetupSQL); err != nil {
 		return nil, err
 	}
-	transaction.Commit()
+	transaction.Commit(ctx)
 
 	pg.db = connection
 	pg.config = config
@@ -155,11 +159,13 @@ func New(config *url.URL) (driver.Migrator, error) {
 }
 
 func (p *Postgres) Begin() error {
-	if err := p.db.Ping(context.Background()); err != nil {
+	ctx := context.Background()
+
+	if err := p.db.Ping(ctx); err != nil {
 		return fmt.Errorf("ping failed %s", err)
 	}
 
-	transaction, err := p.db.Begin()
+	transaction, err := p.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -169,17 +175,23 @@ func (p *Postgres) Begin() error {
 }
 
 func (p *Postgres) Rollback() error {
-	defer p.db.Close()
-	return p.tx.Commit()
+	ctx := context.Background()
+
+	defer p.db.Close(ctx)
+	return p.tx.Commit(ctx)
 }
 
 func (p *Postgres) Commit() error {
-	defer p.db.Close()
-	return p.tx.Commit()
+	ctx := context.Background()
+
+	defer p.db.Close(ctx)
+	return p.tx.Commit(ctx)
 }
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
-	if err := p.db.Ping(context.Background()); err != nil {
+	ctx := context.Background()
+
+	if err := p.db.Ping(ctx); err != nil {
 		return fmt.Errorf("ping failed %s", err)
 	}
 
@@ -188,11 +200,11 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 	reader := io.TeeReader(data, checksum)
 	statements, err := ioutil.ReadAll(reader)
 	if err != nil {
-		p.tx.Rollback()
-		return err
+		p.tx.Rollback(ctx)
+		return fmt.Errorf("read %s", err)
 	}
 
-	rows, err := p.tx.Query(MigrateSQL, name)
+	rows, err := p.tx.Query(ctx, MigrateSQL, name)
 	if err != nil {
 		return fmt.Errorf("schema_migrations select previous %s", err)
 	}
@@ -214,16 +226,18 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 	}
 	rows.Close()
 
-	if _, err := p.tx.Exec(string(statements)); err != nil {
+	if _, err := p.tx.Exec(ctx, string(statements)); err != nil {
+		log.Printf(string(statements))
+		log.Printf(err.Error())
 		// TODO: Not all errors are the same. These ones are problems with your migration.
-		if _, ok := err.(pgx.PgError); ok {
+		if _, ok := err.(*pgconn.PgError); ok {
 			p.error.File = name
 			return p.error
 		}
 		return err
 	}
 
-	if _, err = p.tx.Exec(`insert into schema_migrations (name, checksum) values ($1::text, $2::bytea)`, name, checksum.Sum(nil)); err != nil {
+	if _, err = p.tx.Exec(ctx, `insert into schema_migrations (name, checksum) values ($1::text, $2::bytea)`, name, checksum.Sum(nil)); err != nil {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 

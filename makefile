@@ -1,5 +1,4 @@
 
+.PHONY: test
 test:
-	drone exec
-
-PHONY: test
+	go test ./...

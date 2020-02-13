@@ -1,4 +1,4 @@
-package migrate
+package migrate // import "github.com/shanna/migrate"
 
 import (
 	golog "log"
@@ -9,8 +9,8 @@ type LoggerFunc func(format string, args ...interface{})
 
 var log = LoggerFunc(LoggerLog)
 
-// SetLogger
-func Logger(f LoggerFunc) {
+// SetLogger function.
+func SetLogger(f LoggerFunc) {
 	log = f
 }
 

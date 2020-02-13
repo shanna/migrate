@@ -1,4 +1,4 @@
-package migrate
+package migrate // import "github.com/shanna/migrate"
 
 import (
 	"io/ioutil"

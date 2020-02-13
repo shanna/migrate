@@ -2,15 +2,55 @@ package postgres_test
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/ory/dockertest"
 	driver "github.com/shanna/migrate/driver/postgres"
 )
 
-var config = "postgres://migrate:migrate@localhost:5432/migrate?sslmode=disable"
+var config = ""
+
+func TestMain(m *testing.M) {
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("docker: connect %s", err)
+	}
+
+	resource, err := pool.Run("postgres", "11-alpine", []string{"POSTGRES_PASSWORD=secret", "POSTGRES_DB=migrate"})
+	if err != nil {
+		log.Fatalf("docker: start postgres %s", err)
+	}
+
+	config = fmt.Sprintf("postgres://postgres:secret@localhost:%s/migrate?sslmode=disable", resource.GetPort("5432/tcp"))
+
+	err = pool.Retry(func() error {
+		db, err := sql.Open("pgx", config)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	})
+	if err != nil {
+		log.Fatalf("could not connect to docker postgres: %s", err)
+	}
+
+	// Kill the container if tests take longer than 60 seconds.
+	resource.Expire(60)
+
+	code := m.Run()
+
+	if err := pool.Purge(resource); err != nil {
+		log.Printf("docker: purge resource %s", err)
+	}
+
+	os.Exit(code)
+}
 
 func TestPostgresMigrateCommit(t *testing.T) {
 	connect, _ := url.Parse(config)
@@ -39,7 +79,7 @@ func TestPostgresMigrateCommit(t *testing.T) {
 		t.Fatalf("commit %s", err)
 	}
 
-	db, err := sql.Open("postgres", config)
+	db, err := sql.Open("pgx", config)
 	if err != nil {
 		t.Fatalf("post migrate connnect %s", err)
 	}
@@ -79,7 +119,7 @@ func TestPostgresMigrateRollback(t *testing.T) {
 		t.Fatalf("rollback %s", err)
 	}
 
-	db, err := sql.Open("postgres", config)
+	db, err := sql.Open("pgx", config)
 	if err != nil {
 		t.Fatalf("post migrate connnect %s", err)
 	}
