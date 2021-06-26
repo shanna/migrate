@@ -1,0 +1,5 @@
+begin
+select '001';
+select '002';
+commit
+rollback

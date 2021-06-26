@@ -41,11 +41,13 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			return err
 		}
 
+		path := filepath.Join(dir, entry.Name())
+
 		switch mode := info.Mode(); {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log("execute\t%s\n", entry.Name())
+			log("execute\t%s\n", path)
 			// TODO: Better way tow rite out the binary to a tempile?
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
@@ -53,7 +55,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 			defer os.Remove(fh.Name())
 
-			bytes, err := fs.ReadFile(fsys, entry.Name())
+			bytes, err := fs.ReadFile(fsys, path)
 			if err != nil {
 				return err
 			}
@@ -61,18 +63,22 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 				return err
 			}
 			fh.Close()
-			os.Chmod(fh.Name(), 0500)
+
+			if err := os.Chmod(fh.Name(), 0755); err != nil {
+				return err
+			}
+
 			if err := fileExecute(m.migrator, fh.Name()); err != nil {
 				return err
 			}
 
 		case mode.IsRegular():
-			log("read\t%s\n", entry.Name())
-			fh, err := fsys.Open(entry.Name())
+			log("read\t%s\n", path)
+			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
 			}
-			m.migrator.Migrate(entry.Name(), fh)
+			m.migrator.Migrate(path, fh)
 		}
 	}
 
