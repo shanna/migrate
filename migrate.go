@@ -1,7 +1,7 @@
 package migrate // import "github.com/shanna/migrate"
 
 import (
-	"io/ioutil"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -24,22 +24,82 @@ func New(config *url.URL) (*Migrate, error) {
 	return &Migrate{migrator}, nil
 }
 
-func (m *Migrate) Dir(dir string) error {
+func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return err
+	}
+
 	if err := m.migrator.Begin(); err != nil {
 		return err
 	}
 	defer m.migrator.Rollback()
 
-	files, err := ioutil.ReadDir(dir)
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		switch mode := info.Mode(); {
+		case mode.IsDir():
+			continue
+		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
+			log("execute\t%s\n", entry.Name())
+			// TODO: Better way tow rite out the binary to a tempile?
+			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
+			if err != nil {
+				return err
+			}
+			defer os.Remove(fh.Name())
+
+			bytes, err := fs.ReadFile(fsys, entry.Name())
+			if err != nil {
+				return err
+			}
+			if _, err := fh.Write(bytes); err != nil {
+				return err
+			}
+			fh.Close()
+			os.Chmod(fh.Name(), 0500)
+			if err := fileExecute(m.migrator, fh.Name()); err != nil {
+				return err
+			}
+
+		case mode.IsRegular():
+			log("read\t%s\n", entry.Name())
+			fh, err := fsys.Open(entry.Name())
+			if err != nil {
+				return err
+			}
+			m.migrator.Migrate(entry.Name(), fh)
+		}
+	}
+
+	return m.migrator.Commit()
+}
+
+func (m *Migrate) Dir(dir string) error {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 
-	for _, file := range files {
-		path := filepath.Join(dir, file.Name())
+	if err := m.migrator.Begin(); err != nil {
+		return err
+	}
+	defer m.migrator.Rollback()
 
-		switch mode := file.Mode(); {
-		case mode.IsRegular() && mode&ModeExecutable != 0:
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		switch mode := info.Mode(); {
+		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
 			log("execute\t%s\n", path)
 			if err = fileExecute(m.migrator, path); err != nil {
 				return err

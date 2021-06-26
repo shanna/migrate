@@ -2,13 +2,14 @@ package migrate_test
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shanna/migrate"
 	"github.com/shanna/migrate/driver"
 )
@@ -28,6 +29,7 @@ func NewTestMigrator(config *url.URL) (driver.Migrator, error) {
 }
 
 func (t *TestMigrator) Begin() error {
+	buffer = *new(bytes.Buffer)
 	buffer.WriteString("begin\n")
 	return nil
 }
@@ -43,11 +45,11 @@ func (t *TestMigrator) Commit() error {
 }
 
 func (t *TestMigrator) Migrate(name string, data io.Reader) error {
-	bytes, err := ioutil.ReadAll(data)
+	bytes, err := io.ReadAll(data)
 	if err != nil {
 		return err
 	}
-	buffer.WriteString(fmt.Sprintf("%s:%s", name, bytes))
+	buffer.Write(bytes)
 	return nil
 }
 
@@ -67,7 +69,26 @@ func TestMigrate(t *testing.T) {
 	}
 
 	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "golden"))
-	if !bytes.Equal(buffer.Bytes(), golden) {
-		t.Error("migration doesn't match golden")
+	if diff := cmp.Diff(string(golden), buffer.String()); diff != "" {
+		t.Errorf("migration doesn't match golden (-want +got):\n%s", diff)
+	}
+}
+
+func TestMigrateFS(t *testing.T) {
+	testdata := filepath.Join("_testdata")
+	config, _ := url.Parse("test://")
+
+	migrator, err := migrate.New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrator.DirFS(os.DirFS(filepath.Join(testdata, "input")), "."); err != nil {
+		t.Fatal(err)
+	}
+
+	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "golden"))
+	if diff := cmp.Diff(string(golden), buffer.String()); diff != "" {
+		t.Errorf("migration doesn't match golden (-want +got):\n%s", diff)
 	}
 }

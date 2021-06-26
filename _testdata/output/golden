@@ -1,6 +1,6 @@
 begin
-001-test.sql:select '001';
-002-test.sql:select '002';
-003-test.sh:select '003';
+select '001';
+select '002';
+select '003';
 commit
 rollback
