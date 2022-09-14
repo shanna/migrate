@@ -2,22 +2,21 @@ package migrate // import "github.com/shanna/migrate"
 
 import (
 	"io/fs"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 
-	"github.com/shanna/migrate/driver"
+	mdriver "github.com/shanna/migrate/driver"
 )
 
 const ModeExecutable os.FileMode = 0100
 
 type Migrate struct {
-	migrator driver.Migrator
+	migrator mdriver.Migrator
 }
 
-func New(config *url.URL) (*Migrate, error) {
-	migrator, err := driver.New(config)
+func New(driver, dsn string) (*Migrate, error) {
+	migrator, err := mdriver.New(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +120,7 @@ func (m *Migrate) Dir(dir string) error {
 	return m.migrator.Commit()
 }
 
-func fileExecute(migrator driver.Migrator, path string) error {
+func fileExecute(migrator mdriver.Migrator, path string) error {
 	cmd := exec.Command(path)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -139,7 +138,7 @@ func fileExecute(migrator driver.Migrator, path string) error {
 	return cmd.Wait()
 }
 
-func fileOpen(migrator driver.Migrator, path string) error {
+func fileOpen(migrator mdriver.Migrator, path string) error {
 	fh, err := os.Open(path)
 	if err != nil {
 		return err

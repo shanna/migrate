@@ -25,10 +25,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	driver, err := url.Parse(config.Driver)
+	driver, err := url.Parse(config.DSN)
 	exitOnError(err)
 
-	migrator, err := migrate.New(driver)
+	migrator, err := migrate.New(driver.Scheme, config.DSN)
 	exitOnError(err)
 
 	if err := migrator.Dir(config.Dir); err != nil {

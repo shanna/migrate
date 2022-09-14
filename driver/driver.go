@@ -3,12 +3,11 @@ package driver
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"sort"
 	"sync"
 )
 
-type Driver func(config *url.URL) (Migrator, error)
+type Driver func(dsn string) (Migrator, error)
 
 type Migrator interface {
 	Begin() error
@@ -44,13 +43,13 @@ func Drivers() []string {
 	return list
 }
 
-func New(config *url.URL) (Migrator, error) {
+func New(driver, dsn string) (Migrator, error) {
 	driversMutex.RLock()
-	driver, ok := drivers[config.Scheme]
+	d, ok := drivers[driver]
 	driversMutex.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("unknown driver %q (forgotten import?)", config.Scheme)
+		return nil, fmt.Errorf("unknown driver %q (forgotten import?)", driver)
 	}
-	return driver(config)
+	return d(dsn)
 }

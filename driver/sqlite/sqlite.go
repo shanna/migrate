@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"time"
 
 	"github.com/shanna/migrate/driver"
@@ -45,8 +44,8 @@ type Sqlite struct {
 	tx *sql.Tx
 }
 
-func New(config *url.URL) (driver.Migrator, error) {
-	conn, err := sql.Open("sqlite", config.String())
+func New(dsn string) (driver.Migrator, error) {
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}

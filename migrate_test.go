@@ -5,7 +5,6 @@ import (
 	"embed"
 	"io"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +24,7 @@ var buffer bytes.Buffer
 
 type TestMigrator struct{}
 
-func NewTestMigrator(config *url.URL) (driver.Migrator, error) {
+func NewTestMigrator(dsn string) (driver.Migrator, error) {
 	return &TestMigrator{}, nil
 }
 
@@ -58,9 +57,8 @@ func (t *TestMigrator) Migrate(name string, data io.Reader) error {
 
 func TestMigrate(t *testing.T) {
 	testdata := filepath.Join("_testdata")
-	config, _ := url.Parse("test://")
 
-	migrator, err := migrate.New(config)
+	migrator, err := migrate.New("test", "test://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +75,8 @@ func TestMigrate(t *testing.T) {
 
 func TestMigrateFS(t *testing.T) {
 	testdata := filepath.Join("_testdata")
-	config, _ := url.Parse("test://")
 
-	migrator, err := migrate.New(config)
+	migrator, err := migrate.New("test", "test://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +96,8 @@ var input embed.FS
 
 func TestMigrateEmbedFS(t *testing.T) {
 	testdata := filepath.Join("_testdata")
-	config, _ := url.Parse("test://")
 
-	migrator, err := migrate.New(config)
+	migrator, err := migrate.New("test", "test://")
 	if err != nil {
 		t.Fatal(err)
 	}

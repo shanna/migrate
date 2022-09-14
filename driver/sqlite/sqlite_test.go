@@ -2,7 +2,6 @@ package postgres_test
 
 import (
 	"database/sql"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -18,9 +17,7 @@ func TestSqliteMigrateCommit(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	url, _ := url.Parse("sqlite://" + dir + "/migrate.db")
-
-	migrator, err := driver.New(url)
+	migrator, err := driver.New("sqlite://" + dir + "/migrate.db")
 	if err != nil {
 		t.Skipf("postgres connect %s", err)
 	}
@@ -45,7 +42,7 @@ func TestSqliteMigrateCommit(t *testing.T) {
 		t.Fatalf("commit %s", err)
 	}
 
-	db, err := sql.Open("sqlite", url.String())
+	db, err := sql.Open("sqlite", "sqlite://"+dir+"/migrate.db")
 	if err != nil {
 		t.Fatalf("post migrate connnect %s", err)
 	}
@@ -65,9 +62,7 @@ func TestSqliteMigrateRollback(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	url, _ := url.Parse("sqlite://" + dir + "/migrate.db")
-
-	migrator, err := driver.New(url)
+	migrator, err := driver.New("sqlite://" + dir + "/migrate.db")
 	if err != nil {
 		t.Skipf("postgres connect %s", err)
 	}
@@ -92,7 +87,7 @@ func TestSqliteMigrateRollback(t *testing.T) {
 		t.Fatalf("rollback %s", err)
 	}
 
-	db, err := sql.Open("sqlite", url.String())
+	db, err := sql.Open("sqlite", "sqlite://"+dir+"/migrate.db")
 	if err != nil {
 		t.Fatalf("post migrate connnect %s", err)
 	}

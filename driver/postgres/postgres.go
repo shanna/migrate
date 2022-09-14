@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"net/url"
 	"strings"
 	"time"
 
@@ -46,9 +45,8 @@ type migrate struct {
 }
 
 type Postgres struct {
-	config *url.URL
-	db     *pgx.Conn
-	tx     pgx.Tx
+	db *pgx.Conn
+	tx pgx.Tx
 	// closed/mutex? The driver provides synchronization for calls but the pq implementation on its own isn't safe.
 	error Error
 }
@@ -118,8 +116,8 @@ func (p *Postgres) Log(_ context.Context, level pgx.LogLevel, msg string, data m
 	}
 }
 
-func New(config *url.URL) (driver.Migrator, error) {
-	connConfig, err := pgx.ParseConfig(config.String())
+func New(dsn string) (driver.Migrator, error) {
+	connConfig, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +150,6 @@ func New(config *url.URL) (driver.Migrator, error) {
 	transaction.Commit(ctx)
 
 	pg.db = connection
-	pg.config = config
 
 	return pg, nil
 }

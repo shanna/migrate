@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -53,8 +52,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestPostgresMigrateCommit(t *testing.T) {
-	connect, _ := url.Parse(config)
-	migrator, err := driver.New(connect)
+	migrator, err := driver.New(config)
 	if err != nil {
 		t.Skipf("postgres connect %s", err)
 	}
@@ -93,8 +91,7 @@ func TestPostgresMigrateCommit(t *testing.T) {
 }
 
 func TestPostgresMigrateRollback(t *testing.T) {
-	connect, _ := url.Parse(config)
-	migrator, err := driver.New(connect)
+	migrator, err := driver.New(config)
 	if err != nil {
 		t.Skipf("postgres connect %s", err)
 	}
