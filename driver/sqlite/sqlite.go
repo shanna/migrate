@@ -47,7 +47,7 @@ type Sqlite struct {
 func New(dsn string) (driver.Migrator, error) {
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sql open: %w", err)
 	}
 
 	s := &Sqlite{
@@ -99,7 +99,7 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 	statements, err := io.ReadAll(reader)
 	if err != nil {
 		s.tx.Rollback()
-		return fmt.Errorf("read %s", err)
+		return fmt.Errorf("read: %w", err)
 	}
 
 	rows, err := s.tx.Query(MigrateSQL, name)
@@ -114,19 +114,17 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("schema_migrations scan previous %s", err)
 		}
-
 		if base64.StdEncoding.EncodeToString(checksum.Sum(nil)) != previous.checksum {
-			return fmt.Errorf("migration '%s' has been altered since it was run on %s", previous.name, previous.completed)
+			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		// TODO: Skip log.
+		log.Printf("%s: skip, already run on %s", previous.name, previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := s.tx.Exec(string(statements)); err != nil {
-		log.Println(string(statements))
-		log.Println(err.Error())
+		log.Printf("%s: error: %s, sql: <<SQL\n%s\nSQL", name, err, string(statements))
 		return err
 	}
 
@@ -134,5 +132,6 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
+	log.Printf("%s: commit", name) // TODO: Log in the actual commit with per migration log context.
 	return nil
 }

@@ -1,7 +1,9 @@
 package migrate // import "github.com/shanna/migrate"
 
 import (
+	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,25 +48,25 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log("execute\t%s\n", path)
+			log.Printf("%s: execute", path)
 			// TODO: Better way tow rite out the binary to a tempile?
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
-				return err
+				return fmt.Errorf("mkdir temp: %w", err)
 			}
 			defer os.Remove(fh.Name())
 
 			bytes, err := fs.ReadFile(fsys, path)
 			if err != nil {
-				return err
+				return fmt.Errorf("read: %w", err)
 			}
 			if _, err := fh.Write(bytes); err != nil {
-				return err
+				return fmt.Errorf("write: %w", err)
 			}
 			fh.Close()
 
 			if err := os.Chmod(fh.Name(), 0755); err != nil {
-				return err
+				return fmt.Errorf("chmod: %w", err)
 			}
 
 			if err := fileExecute(m.migrator, fh.Name()); err != nil {
@@ -72,12 +74,14 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 
 		case mode.IsRegular():
-			log("read\t%s\n", path)
+			log.Printf("%s: read", path)
 			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
 			}
-			m.migrator.Migrate(path, fh)
+			if err := m.migrator.Migrate(path, fh); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -100,17 +104,17 @@ func (m *Migrate) Dir(dir string) error {
 
 		info, err := entry.Info()
 		if err != nil {
-			return err
+			return fmt.Errorf("stat: %w", err)
 		}
 
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log("execute\t%s\n", path)
+			log.Printf("%s: execute", path)
 			if err = fileExecute(m.migrator, path); err != nil {
 				return err
 			}
 		case mode.IsRegular():
-			log("read\t%s\n", path)
+			log.Printf("%s: read", path)
 			if err := fileOpen(m.migrator, path); err != nil {
 				return err
 			}
