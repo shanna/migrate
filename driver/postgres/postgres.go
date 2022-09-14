@@ -6,7 +6,6 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"net/url"
@@ -198,7 +197,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 	// Shame you can't stream statements to the driver as well.
 	checksum := sha512.New()
 	reader := io.TeeReader(data, checksum)
-	statements, err := ioutil.ReadAll(reader)
+	statements, err := io.ReadAll(reader)
 	if err != nil {
 		p.tx.Rollback(ctx)
 		return fmt.Errorf("read %s", err)

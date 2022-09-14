@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"time"
@@ -98,7 +97,7 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 	// Shame you can't stream statements to the driver as well.
 	checksum := sha512.New()
 	reader := io.TeeReader(data, checksum)
-	statements, err := ioutil.ReadAll(reader)
+	statements, err := io.ReadAll(reader)
 	if err != nil {
 		s.tx.Rollback()
 		return fmt.Errorf("read %s", err)
