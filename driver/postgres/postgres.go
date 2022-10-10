@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha512"
+	"errors"
 	"fmt"
 	"io"
 	"log"
-	"math"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v5"
 	"github.com/shanna/migrate/driver"
 )
 
@@ -47,73 +46,6 @@ type migrate struct {
 type Postgres struct {
 	db *pgx.Conn
 	tx pgx.Tx
-	// closed/mutex? The driver provides synchronization for calls but the pq implementation on its own isn't safe.
-	error Error
-}
-
-type Error struct { // Common?
-	Message    string
-	File       string
-	Line       int
-	Near       string
-	NearMarker int
-}
-
-func (e Error) Error() string {
-	return fmt.Sprintf("%s\n\nError: %s\nFile:  %s\nLine:  %d\nNear:  %s\n       %s",
-		e.Message,
-		e.Message,
-		e.File,
-		e.Line,
-		e.Near,
-		strings.Repeat(" ", e.NearMarker)+"^",
-	)
-}
-
-// Both pq and pgx don't return the original query in the error structure so in the short term
-// dig it out of the logs.
-func (p *Postgres) Log(_ context.Context, level pgx.LogLevel, msg string, data map[string]interface{}) {
-	err, ok := data["err"]
-	if !ok {
-		return
-	}
-
-	pgxErr, ok := err.(*pgconn.PgError)
-	if !ok {
-		return
-	}
-	position := int(pgxErr.Position - 1)
-
-	sql, ok := data["sql"].(string)
-	if !ok {
-		return
-	}
-
-	length := len(sql)
-	if length > math.MaxInt32 || position < 0 || position >= length {
-		return
-	}
-
-	start := strings.LastIndex(sql[:position], "\n")
-	if start == -1 {
-		start = 0
-	} else {
-		start++
-	}
-
-	end := strings.Index(sql[position:], "\n")
-	if end == -1 {
-		end = length
-	} else {
-		end += position
-	}
-
-	p.error = Error{
-		Message:    pgxErr.Message,
-		Line:       strings.Count(sql[:start], "\n") + 1,
-		Near:       sql[start:end],
-		NearMarker: position - start,
-	}
 }
 
 func New(dsn string) (driver.Migrator, error) {
@@ -125,9 +57,6 @@ func New(dsn string) (driver.Migrator, error) {
 	ctx := context.Background()
 
 	pg := &Postgres{}
-
-	connConfig.LogLevel = pgx.LogLevelDebug
-	connConfig.Logger = pg
 
 	connection, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
@@ -212,23 +141,22 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("schema_migrations scan previous %s", err)
 		}
-
 		if !bytes.Equal(checksum.Sum(nil), previous.checksum) {
-			return fmt.Errorf("migration '%s' has been altered since it was run on %s", previous.name, previous.completed)
+			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		// TODO: Skip log.
+		log.Printf("%s: skip, already run on %s", previous.name, previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := p.tx.Exec(ctx, string(statements)); err != nil {
-		log.Printf(string(statements))
-		log.Printf(err.Error())
-		// TODO: Not all errors are the same. These ones are problems with your migration.
-		if _, ok := err.(*pgconn.PgError); ok {
-			p.error.File = name
-			return p.error
+		var pgErr *pgconn.PgError
+		// if perr, ok := err.(*pgconn.PgError); ok {
+		if errors.As(err, &pgErr) {
+			log.Printf("%s: error:%s, code:%s, line:%d, sql: <<SQL\n%s\nSQL", name, err, pgErr.Code, pgErr.Line, string(statements))
+		} else {
+			log.Printf("%s: error: %s, sql: <<SQL\n%s\nSQL", name, err, string(statements))
 		}
 		return err
 	}
@@ -237,5 +165,6 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
+	log.Printf("%s: commit", name) // TODO: Log in the actual commit with per migration log context.
 	return nil
 }

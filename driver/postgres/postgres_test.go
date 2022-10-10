@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/ory/dockertest"
 	driver "github.com/shanna/migrate/driver/postgres"
 )
@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("docker: connect %s", err)
 	}
 
-	resource, err := pool.Run("postgres", "11-alpine", []string{"POSTGRES_PASSWORD=secret", "POSTGRES_DB=migrate"})
+	resource, err := pool.Run("postgres", "14-alpine", []string{"POSTGRES_PASSWORD=secret", "POSTGRES_DB=migrate"})
 	if err != nil {
 		log.Fatalf("docker: start postgres %s", err)
 	}
@@ -127,5 +127,4 @@ func TestPostgresMigrateRollback(t *testing.T) {
 		t.Fatalf("error %s", err)
 	}
 	rows.Close()
-
 }
