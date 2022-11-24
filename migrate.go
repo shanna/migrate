@@ -79,7 +79,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			if err != nil {
 				return err
 			}
-			if err := m.migrator.Migrate(path, fh); err != nil {
+			if err := m.migrator.Migrate(filepath.Base(path), fh); err != nil {
 				return err
 			}
 		}
