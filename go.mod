@@ -12,9 +12,9 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/jackc/pgconn v1.13.0
-	github.com/jackc/pgx/v4 v4.17.2
-	github.com/jackc/pgx/v5 v5.0.2 // indirect
-	github.com/opencontainers/image-spec v1.0.1 // indirect
+	github.com/jackc/pgx/v5 v5.0.2
+	github.com/lib/pq v1.10.2 // indirect
+	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/opencontainers/runc v1.0.0 // indirect
 	github.com/ory/dockertest v3.3.5+incompatible
 	golang.org/x/mod v0.6.0-dev.0.20211102181907-3a5865c02020 // indirect
