@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("docker: connect %s", err)
 	}
 
-	resource, err := pool.Run("postgres", "14-alpine", []string{"POSTGRES_PASSWORD=secret", "POSTGRES_DB=migrate"})
+	resource, err := pool.Run("postgres", "15-alpine", []string{"POSTGRES_PASSWORD=secret", "POSTGRES_DB=migrate"})
 	if err != nil {
 		log.Fatalf("docker: start postgres %s", err)
 	}

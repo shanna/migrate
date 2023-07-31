@@ -22,19 +22,25 @@ func init() {
 }
 
 const SetupSQL = `
-create table if not exists schema_migrations (
-  name text not null,
+create schema if not exists migrate;
+
+create table if not exists migrate.schema_migrations (
+  name text not null primary key,
   checksum bytea not null,
   completed timestamp with time zone not null default now(),
   unique(name, checksum)
 );
-lock table schema_migrations in exclusive mode;
+lock table migrate.schema_migrations in exclusive mode;
 `
 
-const MigrateSQL = `
+const SelectMigrationSQL = `
 select name, completed, checksum
-from schema_migrations
+from migrate.schema_migrations
 where name = $1::text;
+`
+
+const InsertMigrationSQL = `
+insert into migrate.schema_migrations (name, checksum) values ($1::text, $2::bytea)
 `
 
 type migrate struct {
@@ -129,7 +135,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("read %s", err)
 	}
 
-	rows, err := p.tx.Query(ctx, MigrateSQL, name)
+	rows, err := p.tx.Query(ctx, SelectMigrationSQL, name)
 	if err != nil {
 		return fmt.Errorf("schema_migrations select previous %s", err)
 	}
@@ -161,7 +167,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return err
 	}
 
-	if _, err = p.tx.Exec(ctx, `insert into schema_migrations (name, checksum) values ($1::text, $2::bytea)`, name, checksum.Sum(nil)); err != nil {
+	if _, err = p.tx.Exec(ctx, InsertMigrationSQL, name, checksum.Sum(nil)); err != nil {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
