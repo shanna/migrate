@@ -3,10 +3,11 @@ package migrate // import "github.com/shanna/migrate"
 import (
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	log "golang.org/x/exp/slog"
 
 	mdriver "github.com/shanna/migrate/driver"
 )
@@ -48,7 +49,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log.Printf("%s: execute", path)
+			log.Info("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			// TODO: Better way tow rite out the binary to a tempile?
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
@@ -74,7 +75,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 
 		case mode.IsRegular():
-			log.Printf("%s: read", path)
+			log.Info("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
@@ -109,12 +110,12 @@ func (m *Migrate) Dir(dir string) error {
 
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log.Printf("%s: execute", path)
+			log.Info("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err = fileExecute(m.migrator, path); err != nil {
 				return err
 			}
 		case mode.IsRegular():
-			log.Printf("%s: read", path)
+			log.Info("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err := fileOpen(m.migrator, path); err != nil {
 				return err
 			}

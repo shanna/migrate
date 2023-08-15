@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
+	"path/filepath"
 	"time"
+
+	log "golang.org/x/exp/slog"
 
 	"github.com/shanna/migrate/driver"
 	_ "modernc.org/sqlite"
@@ -93,6 +95,8 @@ func (s *Sqlite) Commit() error {
 }
 
 func (s *Sqlite) Migrate(name string, data io.Reader) error {
+	log := log.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "postgres")
+
 	// Shame you can't stream statements to the driver as well.
 	checksum := sha512.New()
 	reader := io.TeeReader(data, checksum)
@@ -118,13 +122,13 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Printf("%s: skip, already run on %s", previous.name, previous.completed)
+		log.Info("skip", "reason", "already run", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := s.tx.Exec(string(statements)); err != nil {
-		log.Printf("%s: error: %s, sql: <<SQL\n%s\nSQL", name, err, string(statements))
+		log.Error("error", "error", err, "sql", string(statements))
 		return err
 	}
 
@@ -132,6 +136,6 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Printf("%s: commit", name) // TODO: Log in the actual commit with per migration log context.
+	log.Info("commit")
 	return nil
 }

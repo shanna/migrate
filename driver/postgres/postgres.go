@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"path/filepath"
 	"time"
+
+	log "golang.org/x/exp/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -121,6 +123,7 @@ func (p *Postgres) Commit() error {
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
 	ctx := context.Background()
+	log := log.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "postgres")
 
 	if err := p.db.Ping(ctx); err != nil {
 		return fmt.Errorf("ping failed %s", err)
@@ -151,7 +154,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Printf("%s: skip, already run on %s", previous.name, previous.completed)
+		log.Info("skip", "reason", "already run", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
@@ -160,9 +163,9 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		var pgErr *pgconn.PgError
 		// if perr, ok := err.(*pgconn.PgError); ok {
 		if errors.As(err, &pgErr) {
-			log.Printf("%s: error:%s, code:%s, line:%d, sql: <<SQL\n%s\nSQL", name, err, pgErr.Code, pgErr.Line, string(statements))
+			log.Error("error", "error", err, "code", pgErr.Code, "line", pgErr.Line, "sql", string(statements))
 		} else {
-			log.Printf("%s: error: %s, sql: <<SQL\n%s\nSQL", name, err, string(statements))
+			log.Error("error", "error", err, "sql", string(statements))
 		}
 		return err
 	}
@@ -171,6 +174,6 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Printf("%s: commit", name) // TODO: Log in the actual commit with per migration log context.
+	log.Info("commit")
 	return nil
 }

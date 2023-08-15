@@ -16,6 +16,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v1.0.0 // indirect
 	github.com/ory/dockertest v3.3.5+incompatible
+	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 	modernc.org/sqlite v1.24.0
 )
