@@ -3,11 +3,10 @@ package migrate // import "github.com/shanna/migrate"
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	log "golang.org/x/exp/slog"
 
 	mdriver "github.com/shanna/migrate/driver"
 )
@@ -49,7 +48,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log.Info("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
+			slog.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			// TODO: Better way tow rite out the binary to a tempile?
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
@@ -75,12 +74,12 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 
 		case mode.IsRegular():
-			log.Info("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			slog.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
 			}
-			if err := m.migrator.Migrate(filepath.Base(path), fh); err != nil {
+			if err := m.migrator.Migrate(path, fh); err != nil {
 				return err
 			}
 		}
@@ -110,12 +109,12 @@ func (m *Migrate) Dir(dir string) error {
 
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			log.Info("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
+			slog.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err = fileExecute(m.migrator, path); err != nil {
 				return err
 			}
 		case mode.IsRegular():
-			log.Info("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			slog.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err := fileOpen(m.migrator, path); err != nil {
 				return err
 			}
@@ -136,7 +135,7 @@ func fileExecute(migrator mdriver.Migrator, path string) error {
 		return err
 	}
 
-	if err := migrator.Migrate(filepath.Base(path), stdout); err != nil {
+	if err := migrator.Migrate(path, stdout); err != nil {
 		return err
 	}
 
@@ -148,5 +147,5 @@ func fileOpen(migrator mdriver.Migrator, path string) error {
 	if err != nil {
 		return err
 	}
-	return migrator.Migrate(filepath.Base(path), fh)
+	return migrator.Migrate(path, fh)
 }
