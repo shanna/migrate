@@ -16,6 +16,19 @@ const ModeExecutable os.FileMode = 0100
 // NameFunc transforms a file path into a migration name.
 type NameFunc func(path string) string
 
+// Logger is compatible with *slog.Logger.
+type Logger interface {
+	Debug(msg string, args ...any)
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
+type noopLogger struct{}
+
+func (noopLogger) Debug(string, ...any) {}
+func (noopLogger) Info(string, ...any)  {}
+func (noopLogger) Error(string, ...any) {}
+
 // Option configures a Migrate instance.
 type Option func(*Migrate)
 
@@ -27,9 +40,17 @@ func WithNameFunc(f NameFunc) Option {
 	}
 }
 
+// WithLogger sets a custom logger. Default is slog.Default().
+func WithLogger(l Logger) Option {
+	return func(m *Migrate) {
+		m.logger = l
+	}
+}
+
 type Migrate struct {
 	migrator mdriver.Migrator
 	nameFunc NameFunc
+	logger   Logger
 }
 
 func New(driver, dsn string, opts ...Option) (*Migrate, error) {
@@ -40,6 +61,7 @@ func New(driver, dsn string, opts ...Option) (*Migrate, error) {
 	m := &Migrate{
 		migrator: migrator,
 		nameFunc: filepath.Base,
+		logger:   slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -70,7 +92,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			slog.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			// TODO: Better way tow rite out the binary to a tempile?
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
@@ -96,7 +118,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 
 		case mode.IsRegular():
-			slog.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
@@ -131,12 +153,12 @@ func (m *Migrate) Dir(dir string) error {
 
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			slog.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err = m.execute(path, m.nameFunc(path)); err != nil {
 				return err
 			}
 		case mode.IsRegular():
-			slog.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
 			if err := m.open(path); err != nil {
 				return err
 			}
