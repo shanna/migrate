@@ -79,7 +79,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			if err != nil {
 				return err
 			}
-			if err := m.migrator.Migrate(path, fh); err != nil {
+			if err := m.migrator.Migrate(filepath.Base(path), fh); err != nil {
 				return err
 			}
 		}
@@ -135,7 +135,7 @@ func fileExecute(migrator mdriver.Migrator, path string) error {
 		return err
 	}
 
-	if err := migrator.Migrate(path, stdout); err != nil {
+	if err := migrator.Migrate(filepath.Base(path), stdout); err != nil {
 		return err
 	}
 
@@ -147,5 +147,5 @@ func fileOpen(migrator mdriver.Migrator, path string) error {
 	if err != nil {
 		return err
 	}
-	return migrator.Migrate(path, fh)
+	return migrator.Migrate(filepath.Base(path), fh)
 }

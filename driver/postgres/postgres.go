@@ -7,10 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"time"
-
-	log "golang.org/x/exp/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -123,7 +122,7 @@ func (p *Postgres) Commit() error {
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
 	ctx := context.Background()
-	log := log.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "postgres")
+	log := slog.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "postgres")
 
 	if err := p.db.Ping(ctx); err != nil {
 		return fmt.Errorf("ping failed %s", err)
@@ -154,7 +153,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Info("skip", "reason", "already run", "completed", previous.completed)
+		log.Debug("skip", "reason", "already run", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
@@ -174,6 +173,6 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Info("commit")
+	log.Debug("commit")
 	return nil
 }

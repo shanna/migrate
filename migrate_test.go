@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"embed"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -67,7 +66,7 @@ func TestMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "all.golden"))
+	golden, _ := os.ReadFile(filepath.Join(testdata, "output", "all.golden"))
 	if diff := cmp.Diff(string(golden), buffer.String()); diff != "" {
 		t.Errorf("migration doesn't match golden (-want +got):\n%s", diff)
 	}
@@ -85,7 +84,7 @@ func TestMigrateFS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "all.golden"))
+	golden, _ := os.ReadFile(filepath.Join(testdata, "output", "all.golden"))
 	if diff := cmp.Diff(string(golden), buffer.String()); diff != "" {
 		t.Errorf("migration doesn't match golden (-want +got):\n%s", diff)
 	}
@@ -106,7 +105,7 @@ func TestMigrateEmbedFS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	golden, _ := ioutil.ReadFile(filepath.Join(testdata, "output", "embed.golden"))
+	golden, _ := os.ReadFile(filepath.Join(testdata, "output", "embed.golden"))
 	if diff := cmp.Diff(string(golden), buffer.String()); diff != "" {
 		t.Errorf("migration doesn't match golden (-want +got):\n%s", diff)
 	}
