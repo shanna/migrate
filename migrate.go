@@ -13,16 +13,38 @@ import (
 
 const ModeExecutable os.FileMode = 0100
 
-type Migrate struct {
-	migrator mdriver.Migrator
+// NameFunc transforms a file path into a migration name.
+type NameFunc func(path string) string
+
+// Option configures a Migrate instance.
+type Option func(*Migrate)
+
+// WithNameFunc sets a custom function to transform file paths into migration names.
+// Default is filepath.Base.
+func WithNameFunc(f NameFunc) Option {
+	return func(m *Migrate) {
+		m.nameFunc = f
+	}
 }
 
-func New(driver, dsn string) (*Migrate, error) {
+type Migrate struct {
+	migrator mdriver.Migrator
+	nameFunc NameFunc
+}
+
+func New(driver, dsn string, opts ...Option) (*Migrate, error) {
 	migrator, err := mdriver.New(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &Migrate{migrator}, nil
+	m := &Migrate{
+		migrator: migrator,
+		nameFunc: filepath.Base,
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m, nil
 }
 
 func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
@@ -69,7 +91,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 				return fmt.Errorf("chmod: %w", err)
 			}
 
-			if err := fileExecute(m.migrator, fh.Name()); err != nil {
+			if err := m.execute(fh.Name(), m.nameFunc(path)); err != nil {
 				return err
 			}
 
@@ -79,7 +101,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			if err != nil {
 				return err
 			}
-			if err := m.migrator.Migrate(filepath.Base(path), fh); err != nil {
+			if err := m.migrator.Migrate(m.nameFunc(path), fh); err != nil {
 				return err
 			}
 		}
@@ -110,12 +132,12 @@ func (m *Migrate) Dir(dir string) error {
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
 			slog.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
-			if err = fileExecute(m.migrator, path); err != nil {
+			if err = m.execute(path, m.nameFunc(path)); err != nil {
 				return err
 			}
 		case mode.IsRegular():
 			slog.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
-			if err := fileOpen(m.migrator, path); err != nil {
+			if err := m.open(path); err != nil {
 				return err
 			}
 		}
@@ -124,8 +146,8 @@ func (m *Migrate) Dir(dir string) error {
 	return m.migrator.Commit()
 }
 
-func fileExecute(migrator mdriver.Migrator, path string) error {
-	cmd := exec.Command(path)
+func (m *Migrate) execute(execPath, name string) error {
+	cmd := exec.Command(execPath)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -135,17 +157,17 @@ func fileExecute(migrator mdriver.Migrator, path string) error {
 		return err
 	}
 
-	if err := migrator.Migrate(filepath.Base(path), stdout); err != nil {
+	if err := m.migrator.Migrate(name, stdout); err != nil {
 		return err
 	}
 
 	return cmd.Wait()
 }
 
-func fileOpen(migrator mdriver.Migrator, path string) error {
+func (m *Migrate) open(path string) error {
 	fh, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	return migrator.Migrate(filepath.Base(path), fh)
+	return m.migrator.Migrate(m.nameFunc(path), fh)
 }
