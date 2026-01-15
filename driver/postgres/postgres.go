@@ -22,28 +22,6 @@ func init() {
 	driver.Register("postgresql", New)
 }
 
-const SetupSQL = `
-create schema if not exists migrate;
-
-create table if not exists migrate.schema_migrations (
-  name text not null primary key,
-  checksum bytea not null,
-  completed timestamp with time zone not null default now(),
-  unique(name, checksum)
-);
-lock table migrate.schema_migrations in exclusive mode;
-`
-
-const SelectMigrationSQL = `
-select name, completed, checksum
-from migrate.schema_migrations
-where name = $1::text;
-`
-
-const InsertMigrationSQL = `
-insert into migrate.schema_migrations (name, checksum) values ($1::text, $2::bytea)
-`
-
 type migrate struct {
 	name      string
 	completed time.Time
@@ -51,19 +29,27 @@ type migrate struct {
 }
 
 type Postgres struct {
-	db *pgx.Conn
-	tx pgx.Tx
+	db        *pgx.Conn
+	tx        pgx.Tx
+	schema    string
+	tableName string
 }
 
-func New(dsn string) (driver.Migrator, error) {
+func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
+	config := &driver.Config{
+		Schema:    driver.DefaultSchema,
+		TableName: driver.DefaultTableName,
+	}
+	for _, opt := range opts {
+		opt(config)
+	}
+
 	connConfig, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx := context.Background()
-
-	pg := &Postgres{}
 
 	connection, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
@@ -74,20 +60,46 @@ func New(dsn string) (driver.Migrator, error) {
 		return nil, fmt.Errorf("ping failed %s", err)
 	}
 
-	// Migration table.
-	transaction, err := connection.Begin(ctx)
-	if err != nil {
-		return nil, err
+	pg := &Postgres{
+		db:        connection,
+		schema:    config.Schema,
+		tableName: config.TableName,
 	}
-	defer transaction.Rollback(ctx)
-	if _, err = transaction.Exec(ctx, SetupSQL); err != nil {
-		return nil, err
-	}
-	transaction.Commit(ctx)
-
-	pg.db = connection
 
 	return pg, nil
+}
+
+func (p *Postgres) qualifiedTableName() string {
+	return p.schema + "." + p.tableName
+}
+
+func (p *Postgres) setupSQL() string {
+	return fmt.Sprintf(`
+create schema if not exists %s;
+
+create table if not exists %s (
+  name text not null primary key,
+  checksum bytea not null,
+  completed timestamp with time zone not null default now(),
+  unique(name, checksum)
+);
+
+lock table %s in exclusive mode;
+`, p.schema, p.qualifiedTableName(), p.qualifiedTableName())
+}
+
+func (p *Postgres) selectMigrationSQL() string {
+	return fmt.Sprintf(`
+select name, completed, checksum
+from %s
+where name = $1::text;
+`, p.qualifiedTableName())
+}
+
+func (p *Postgres) insertMigrationSQL() string {
+	return fmt.Sprintf(`
+insert into %s (name, checksum) values ($1::text, $2::bytea)
+`, p.qualifiedTableName())
 }
 
 func (p *Postgres) Begin() error {
@@ -102,6 +114,13 @@ func (p *Postgres) Begin() error {
 		return err
 	}
 
+	// Setup creates schema/table if needed and locks the table.
+	// The lock serializes concurrent migrations.
+	if _, err := transaction.Exec(ctx, p.setupSQL()); err != nil {
+		transaction.Rollback(ctx)
+		return fmt.Errorf("setup: %w", err)
+	}
+
 	p.tx = transaction
 	return nil
 }
@@ -110,7 +129,7 @@ func (p *Postgres) Rollback() error {
 	ctx := context.Background()
 
 	defer p.db.Close(ctx)
-	return p.tx.Commit(ctx)
+	return p.tx.Rollback(ctx)
 }
 
 func (p *Postgres) Commit() error {
@@ -137,7 +156,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("read %s", err)
 	}
 
-	rows, err := p.tx.Query(ctx, SelectMigrationSQL, name)
+	rows, err := p.tx.Query(ctx, p.selectMigrationSQL(), name)
 	if err != nil {
 		return fmt.Errorf("schema_migrations select previous %s", err)
 	}
@@ -169,7 +188,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return err
 	}
 
-	if _, err = p.tx.Exec(ctx, InsertMigrationSQL, name, checksum.Sum(nil)); err != nil {
+	if _, err = p.tx.Exec(ctx, p.insertMigrationSQL(), name, checksum.Sum(nil)); err != nil {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 

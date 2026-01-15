@@ -122,9 +122,9 @@ func TestPostgresMigrateRollback(t *testing.T) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`select name from rollback_test limit 1`)
-	if err != nil {
-		t.Fatalf("error %s", err)
+	// Table should not exist after rollback
+	_, err = db.Query(`select name from rollback_test limit 1`)
+	if err == nil {
+		t.Fatalf("expected table to not exist after rollback")
 	}
-	rows.Close()
 }

@@ -28,7 +28,15 @@ func main() {
 	driver, err := url.Parse(config.DSN)
 	exitOnError(err)
 
-	migrator, err := migrate.New(driver.Scheme, config.DSN)
+	var opts []migrate.Option
+	if config.Schema != "" {
+		opts = append(opts, migrate.WithSchema(config.Schema))
+	}
+	if config.TableName != "" {
+		opts = append(opts, migrate.WithTableName(config.TableName))
+	}
+
+	migrator, err := migrate.New(driver.Scheme, config.DSN, opts...)
 	exitOnError(err)
 
 	if err := migrator.Dir(config.Dir); err != nil {

@@ -24,7 +24,7 @@ var buffer bytes.Buffer
 
 type TestMigrator struct{}
 
-func NewTestMigrator(dsn string) (driver.Migrator, error) {
+func NewTestMigrator(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	return &TestMigrator{}, nil
 }
 
@@ -58,7 +58,7 @@ var capturedNames []string
 
 type NameCapturingMigrator struct{}
 
-func NewNameCapturingMigrator(dsn string) (driver.Migrator, error) {
+func NewNameCapturingMigrator(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	return &NameCapturingMigrator{}, nil
 }
 

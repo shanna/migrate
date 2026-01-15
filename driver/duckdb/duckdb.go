@@ -19,21 +19,6 @@ func init() {
 	driver.Register("duckdb", New)
 }
 
-const SetupSQL = `
-create table if not exists schema_migrations (
-  name text not null,
-  checksum text not null,
-  completed timestamp not null default current_timestamp,
-  unique(name, checksum)
-);
-`
-
-const MigrateSQL = `
-select name, completed, checksum
-from schema_migrations
-where name = ?;
-`
-
 type migrate struct {
 	name      string
 	completed time.Time
@@ -41,32 +26,74 @@ type migrate struct {
 }
 
 type DuckDB struct {
-	db *sql.DB
-	tx *sql.Tx
+	db        *sql.DB
+	tx        *sql.Tx
+	catalog   string
+	schema    string
+	tableName string
 }
 
-func New(dsn string) (driver.Migrator, error) {
+func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
+	config := &driver.Config{
+		Schema:    driver.DefaultSchema,
+		TableName: driver.DefaultTableName,
+	}
+	for _, opt := range opts {
+		opt(config)
+	}
+
 	conn, err := sql.Open("duckdb", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sql open: %w", err)
 	}
 
-	d := &DuckDB{
-		db: conn,
+	var catalog string
+	if err := conn.QueryRow("SELECT current_catalog()").Scan(&catalog); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("get current catalog: %w", err)
 	}
 
-	// Migration table.
-	transaction, err := conn.Begin()
-	if err != nil {
-		return nil, err
+	d := &DuckDB{
+		db:        conn,
+		catalog:   catalog,
+		schema:    config.Schema,
+		tableName: config.TableName,
 	}
-	defer transaction.Rollback()
-	if _, err = transaction.Exec(SetupSQL); err != nil {
-		return nil, err
-	}
-	transaction.Commit()
 
 	return d, nil
+}
+
+func (d *DuckDB) qualifiedSchemaName() string {
+	return d.catalog + "." + d.schema
+}
+
+func (d *DuckDB) qualifiedTableName() string {
+	return d.catalog + "." + d.schema + "." + d.tableName
+}
+
+func (d *DuckDB) setupSQL() string {
+	return fmt.Sprintf(`
+create schema if not exists %s;
+
+create table if not exists %s (
+  name text not null,
+  checksum text not null,
+  completed timestamp not null default current_timestamp,
+  unique(name, checksum)
+);
+`, d.qualifiedSchemaName(), d.qualifiedTableName())
+}
+
+func (d *DuckDB) selectMigrationSQL() string {
+	return fmt.Sprintf(`
+select name, completed, checksum
+from %s
+where name = ?;
+`, d.qualifiedTableName())
+}
+
+func (d *DuckDB) insertMigrationSQL() string {
+	return fmt.Sprintf(`insert into %s (name, checksum) values (?, ?)`, d.qualifiedTableName())
 }
 
 func (d *DuckDB) Begin() error {
@@ -77,13 +104,20 @@ func (d *DuckDB) Begin() error {
 		return err
 	}
 
+	// Setup creates schema/table if needed.
+	// DuckDB uses file-level locking for serialization.
+	if _, err := transaction.Exec(d.setupSQL()); err != nil {
+		transaction.Rollback()
+		return fmt.Errorf("setup: %w", err)
+	}
+
 	d.tx = transaction
 	return nil
 }
 
 func (d *DuckDB) Rollback() error {
 	defer d.db.Close()
-	return d.tx.Commit()
+	return d.tx.Rollback()
 }
 
 func (d *DuckDB) Commit() error {
@@ -103,7 +137,7 @@ func (d *DuckDB) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("read: %w", err)
 	}
 
-	rows, err := d.tx.Query(MigrateSQL, name)
+	rows, err := d.tx.Query(d.selectMigrationSQL(), name)
 	if err != nil {
 		return fmt.Errorf("schema_migrations select previous %s", err)
 	}
@@ -129,7 +163,7 @@ func (d *DuckDB) Migrate(name string, data io.Reader) error {
 		return err
 	}
 
-	if _, err = d.tx.Exec(`insert into schema_migrations (name, checksum) values (?, ?)`, name, base64.StdEncoding.EncodeToString(checksum.Sum(nil))); err != nil {
+	if _, err = d.tx.Exec(d.insertMigrationSQL(), name, base64.StdEncoding.EncodeToString(checksum.Sum(nil))); err != nil {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 

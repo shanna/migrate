@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"context"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/base64"
@@ -19,21 +18,6 @@ func init() {
 	driver.Register("sqlite", New)
 }
 
-const SetupSQL = `
-create table if not exists schema_migrations (
-  name text not null,
-  checksum text not null,
-  completed datetime not null default current_timestamp,
-  unique(name, checksum)
-);
-`
-
-const MigrateSQL = `
-select name, completed, checksum
-from schema_migrations
-where name = ?;
-`
-
 type migrate struct {
 	name      string
 	completed time.Time
@@ -41,56 +25,98 @@ type migrate struct {
 }
 
 type Sqlite struct {
-	db *sql.DB
-	tx *sql.Tx
+	db        *sql.DB
+	schema    string
+	tableName string
+	inTx      bool
 }
 
-func New(dsn string) (driver.Migrator, error) {
+func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
+	config := &driver.Config{
+		Schema:    driver.DefaultSchema,
+		TableName: driver.DefaultTableName,
+	}
+	for _, opt := range opts {
+		opt(config)
+	}
+
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sql open: %w", err)
 	}
 
 	s := &Sqlite{
-		db: conn,
+		db:        conn,
+		schema:    config.Schema,
+		tableName: config.TableName,
 	}
-
-	// Migration table.
-	transaction, err := conn.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer transaction.Rollback()
-	if _, err = transaction.Exec(SetupSQL); err != nil {
-		return nil, err
-	}
-	transaction.Commit()
-
-	s.db = conn
 
 	return s, nil
 }
 
-func (s *Sqlite) Begin() error {
-	ctx := context.TODO()
+// qualifiedTableName returns schema_tableName since SQLite doesn't support schemas.
+func (s *Sqlite) qualifiedTableName() string {
+	return s.schema + "_" + s.tableName
+}
 
-	transaction, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+func (s *Sqlite) setupSQL() string {
+	return fmt.Sprintf(`
+create table if not exists %s (
+  name text not null,
+  checksum text not null,
+  completed datetime not null default current_timestamp,
+  unique(name, checksum)
+);
+`, s.qualifiedTableName())
+}
+
+func (s *Sqlite) selectMigrationSQL() string {
+	return fmt.Sprintf(`
+select name, completed, checksum
+from %s
+where name = ?;
+`, s.qualifiedTableName())
+}
+
+func (s *Sqlite) insertMigrationSQL() string {
+	return fmt.Sprintf(`insert into %s (name, checksum) values (?, ?)`, s.qualifiedTableName())
+}
+
+func (s *Sqlite) Begin() error {
+	// Use EXCLUSIVE transaction to prevent concurrent migrations.
+	if _, err := s.db.Exec("BEGIN EXCLUSIVE"); err != nil {
+		return fmt.Errorf("begin exclusive: %w", err)
+	}
+	s.inTx = true
+
+	// Ensure migration table exists (idempotent).
+	if _, err := s.db.Exec(s.setupSQL()); err != nil {
+		s.db.Exec("ROLLBACK")
+		s.inTx = false
+		return fmt.Errorf("setup: %w", err)
 	}
 
-	s.tx = transaction
 	return nil
 }
 
 func (s *Sqlite) Rollback() error {
 	defer s.db.Close()
-	return s.tx.Commit()
+	if s.inTx {
+		s.db.Exec("ROLLBACK")
+		s.inTx = false
+	}
+	return nil
 }
 
 func (s *Sqlite) Commit() error {
 	defer s.db.Close()
-	return s.tx.Commit()
+	if s.inTx {
+		if _, err := s.db.Exec("COMMIT"); err != nil {
+			return err
+		}
+		s.inTx = false
+	}
+	return nil
 }
 
 func (s *Sqlite) Migrate(name string, data io.Reader) error {
@@ -101,11 +127,10 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 	reader := io.TeeReader(data, checksum)
 	statements, err := io.ReadAll(reader)
 	if err != nil {
-		s.tx.Rollback()
 		return fmt.Errorf("read: %w", err)
 	}
 
-	rows, err := s.tx.Query(MigrateSQL, name)
+	rows, err := s.db.Query(s.selectMigrationSQL(), name)
 	if err != nil {
 		return fmt.Errorf("schema_migrations select previous %s", err)
 	}
@@ -126,12 +151,12 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 	}
 	rows.Close()
 
-	if _, err := s.tx.Exec(string(statements)); err != nil {
+	if _, err := s.db.Exec(string(statements)); err != nil {
 		log.Error("error", "error", err, "sql", string(statements))
 		return err
 	}
 
-	if _, err = s.tx.Exec(`insert into schema_migrations (name, checksum) values (?, ?)`, name, base64.StdEncoding.EncodeToString(checksum.Sum(nil))); err != nil {
+	if _, err = s.db.Exec(s.insertMigrationSQL(), name, base64.StdEncoding.EncodeToString(checksum.Sum(nil))); err != nil {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 

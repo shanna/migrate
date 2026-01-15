@@ -13,60 +13,48 @@ import (
 
 const ModeExecutable os.FileMode = 0100
 
-// NameFunc transforms a file path into a migration name.
-type NameFunc func(path string) string
+// Re-export options from driver package for convenience.
+var (
+	WithSchema    = mdriver.WithSchema
+	WithTableName = mdriver.WithTableName
+	WithLogger    = mdriver.WithLogger
+	WithNameFunc  = mdriver.WithNameFunc
+)
 
-// Logger is compatible with *slog.Logger.
-type Logger interface {
-	Debug(msg string, args ...any)
-	Info(msg string, args ...any)
-	Error(msg string, args ...any)
-}
-
-type noopLogger struct{}
-
-func (noopLogger) Debug(string, ...any) {}
-func (noopLogger) Info(string, ...any)  {}
-func (noopLogger) Error(string, ...any) {}
-
-// Option configures a Migrate instance.
-type Option func(*Migrate)
-
-// WithNameFunc sets a custom function to transform file paths into migration names.
-// Default is filepath.Base.
-func WithNameFunc(f NameFunc) Option {
-	return func(m *Migrate) {
-		m.nameFunc = f
-	}
-}
-
-// WithLogger sets a custom logger. Default is slog.Default().
-func WithLogger(l Logger) Option {
-	return func(m *Migrate) {
-		m.logger = l
-	}
-}
+// Alias types from driver package.
+type (
+	Option = mdriver.Option
+	Logger = mdriver.Logger
+)
 
 type Migrate struct {
 	migrator mdriver.Migrator
-	nameFunc NameFunc
+	nameFunc func(string) string
 	logger   Logger
 }
 
 func New(driver, dsn string, opts ...Option) (*Migrate, error) {
-	migrator, err := mdriver.New(driver, dsn)
+	// Build config with defaults to extract logger/nameFunc.
+	config := &mdriver.Config{
+		Schema:    mdriver.DefaultSchema,
+		TableName: mdriver.DefaultTableName,
+		Logger:    slog.Default(),
+		NameFunc:  filepath.Base,
+	}
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	migrator, err := mdriver.New(driver, dsn, opts...)
 	if err != nil {
 		return nil, err
 	}
-	m := &Migrate{
+
+	return &Migrate{
 		migrator: migrator,
-		nameFunc: filepath.Base,
-		logger:   slog.Default(),
-	}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m, nil
+		nameFunc: config.NameFunc,
+		logger:   config.Logger,
+	}, nil
 }
 
 func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
