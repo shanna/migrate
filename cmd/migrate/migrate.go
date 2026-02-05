@@ -8,7 +8,10 @@ import (
 	"os"
 
 	"github.com/shanna/migrate"
+	_ "github.com/shanna/migrate/driver/clickhouse"
+	_ "github.com/shanna/migrate/driver/duckdb"
 	_ "github.com/shanna/migrate/driver/postgres"
+	_ "github.com/shanna/migrate/driver/sqlite"
 )
 
 var (
