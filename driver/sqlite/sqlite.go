@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"time"
 
 	"github.com/shanna/migrate/driver"
@@ -26,6 +25,7 @@ type migrate struct {
 
 type Sqlite struct {
 	db        *sql.DB
+	logger    driver.Logger
 	schema    string
 	tableName string
 	inTx      bool
@@ -35,6 +35,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	config := &driver.Config{
 		Schema:    driver.DefaultSchema,
 		TableName: driver.DefaultTableName,
+		Logger:    slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(config)
@@ -47,6 +48,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 
 	s := &Sqlite{
 		db:        conn,
+		logger:    config.Logger,
 		schema:    config.Schema,
 		tableName: config.TableName,
 	}
@@ -120,8 +122,6 @@ func (s *Sqlite) Commit() error {
 }
 
 func (s *Sqlite) Migrate(name string, data io.Reader) error {
-	log := slog.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "sqlite")
-
 	// Shame you can't stream statements to the driver as well.
 	checksum := sha512.New()
 	reader := io.TeeReader(data, checksum)
@@ -146,13 +146,13 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Debug("skip", "reason", "already run", "completed", previous.completed)
+		s.logger.Debug(fmt.Sprintf("migrate skip %s", name), "driver", "sqlite", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := s.db.Exec(string(statements)); err != nil {
-		log.Error("error", "error", err, "sql", string(statements))
+		s.logger.Error(fmt.Sprintf("migrate error %s", name), "driver", "sqlite", "error", err, "sql", string(statements))
 		return err
 	}
 
@@ -160,6 +160,6 @@ func (s *Sqlite) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Debug("commit")
+	s.logger.Debug(fmt.Sprintf("migrate %s", name), "driver", "sqlite")
 	return nil
 }

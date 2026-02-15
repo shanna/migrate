@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,6 +34,7 @@ type ClickHouse struct {
 	db        *sql.DB
 	database  string
 	tableName string
+	logger    driver.Logger
 	locked    bool
 }
 
@@ -42,6 +42,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	config := &driver.Config{
 		Schema:    driver.DefaultSchema,
 		TableName: driver.DefaultTableName,
+		Logger:    slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(config)
@@ -61,6 +62,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 		db:        conn,
 		database:  config.Schema,
 		tableName: config.TableName,
+		logger:    config.Logger,
 	}
 
 	return c, nil
@@ -145,7 +147,6 @@ func (c *ClickHouse) Commit() error {
 }
 
 func (c *ClickHouse) Migrate(name string, data io.Reader) error {
-	log := slog.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "clickhouse")
 	ctx := context.Background()
 
 	checksum := sha512.New()
@@ -171,13 +172,13 @@ func (c *ClickHouse) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Debug("skip", "reason", "already run", "completed", previous.completed)
+		c.logger.Debug(fmt.Sprintf("migrate skip %s", name), "driver", "clickhouse", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := c.db.ExecContext(ctx, string(statements)); err != nil {
-		log.Error("error", "error", err, "sql", string(statements))
+		c.logger.Error(fmt.Sprintf("migrate error %s", name), "driver", "clickhouse", "error", err, "sql", string(statements))
 		return err
 	}
 
@@ -185,6 +186,6 @@ func (c *ClickHouse) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert: %w", err)
 	}
 
-	log.Debug("commit")
+	c.logger.Debug(fmt.Sprintf("migrate %s", name), "driver", "clickhouse")
 	return nil
 }

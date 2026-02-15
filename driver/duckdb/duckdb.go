@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -28,6 +27,7 @@ type migrate struct {
 type DuckDB struct {
 	db        *sql.DB
 	tx        *sql.Tx
+	logger    driver.Logger
 	catalog   string
 	schema    string
 	tableName string
@@ -35,6 +35,7 @@ type DuckDB struct {
 
 func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	config := &driver.Config{
+		Logger:    slog.Default(),
 		Schema:    driver.DefaultSchema,
 		TableName: driver.DefaultTableName,
 	}
@@ -55,6 +56,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 
 	d := &DuckDB{
 		db:        conn,
+		logger:    config.Logger,
 		catalog:   catalog,
 		schema:    config.Schema,
 		tableName: config.TableName,
@@ -126,8 +128,6 @@ func (d *DuckDB) Commit() error {
 }
 
 func (d *DuckDB) Migrate(name string, data io.Reader) error {
-	log := slog.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "duckdb")
-
 	// Shame you can't stream statements to the driver as well.
 	checksum := sha512.New()
 	reader := io.TeeReader(data, checksum)
@@ -153,13 +153,13 @@ func (d *DuckDB) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Debug("skip", "reason", "already run", "completed", previous.completed)
+		d.logger.Debug(fmt.Sprintf("migrate skip %s", name), "driver", "duckdb", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
 
 	if _, err := d.tx.Exec(string(statements)); err != nil {
-		log.Error("error", "error", err, "sql", string(statements))
+		d.logger.Error(fmt.Sprintf("migrate error %s", name), "driver", "duckdb", "error", err, "sql", string(statements))
 		return err
 	}
 
@@ -167,6 +167,6 @@ func (d *DuckDB) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Debug("commit")
+	d.logger.Debug(fmt.Sprintf("migrate %s", name), "driver", "duckdb")
 	return nil
 }

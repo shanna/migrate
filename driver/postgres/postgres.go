@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,6 +30,7 @@ type migrate struct {
 type Postgres struct {
 	db        *pgx.Conn
 	tx        pgx.Tx
+	logger    driver.Logger
 	schema    string
 	tableName string
 }
@@ -39,6 +39,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 	config := &driver.Config{
 		Schema:    driver.DefaultSchema,
 		TableName: driver.DefaultTableName,
+		Logger:    slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(config)
@@ -62,6 +63,7 @@ func New(dsn string, opts ...driver.Option) (driver.Migrator, error) {
 
 	pg := &Postgres{
 		db:        connection,
+		logger:    config.Logger,
 		schema:    config.Schema,
 		tableName: config.TableName,
 	}
@@ -141,7 +143,6 @@ func (p *Postgres) Commit() error {
 
 func (p *Postgres) Migrate(name string, data io.Reader) error {
 	ctx := context.Background()
-	log := slog.With("name", filepath.Base(name), "path", filepath.Dir(name), "driver", "postgres")
 
 	if err := p.db.Ping(ctx); err != nil {
 		return fmt.Errorf("ping failed %s", err)
@@ -172,7 +173,7 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 			return fmt.Errorf("%q has been altered since it was run on %s", previous.name, previous.completed)
 		}
 
-		log.Debug("skip", "reason", "already run", "completed", previous.completed)
+		p.logger.Debug(fmt.Sprintf("migrate skip %s", name), "driver", "postgres", "completed", previous.completed)
 		return nil
 	}
 	rows.Close()
@@ -181,9 +182,9 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		var pgErr *pgconn.PgError
 		// if perr, ok := err.(*pgconn.PgError); ok {
 		if errors.As(err, &pgErr) {
-			log.Error("error", "error", err, "code", pgErr.Code, "line", pgErr.Line, "sql", string(statements))
+			p.logger.Error(fmt.Sprintf("migrate error %s", name), "driver", "postgres", "error", err, "code", pgErr.Code, "line", pgErr.Line, "sql", string(statements))
 		} else {
-			log.Error("error", "error", err, "sql", string(statements))
+			p.logger.Error(fmt.Sprintf("migrate error %s", name), "driver", "postgres", "error", err, "sql", string(statements))
 		}
 		return err
 	}
@@ -192,6 +193,6 @@ func (p *Postgres) Migrate(name string, data io.Reader) error {
 		return fmt.Errorf("schema_migrations insert %s", err)
 	}
 
-	log.Debug("commit")
+	p.logger.Debug(fmt.Sprintf("migrate %s", name), "driver", "postgres")
 	return nil
 }

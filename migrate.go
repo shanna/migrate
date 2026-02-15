@@ -80,8 +80,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 		case mode.IsDir():
 			continue
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			m.logger.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
-			// TODO: Better way tow rite out the binary to a tempile?
+			m.logger.Debug(fmt.Sprintf("migrate execute %s", path))
 			fh, err := os.CreateTemp(os.TempDir(), "migrate-*")
 			if err != nil {
 				return fmt.Errorf("mkdir temp: %w", err)
@@ -106,7 +105,7 @@ func (m *Migrate) DirFS(fsys fs.FS, dir string) error {
 			}
 
 		case mode.IsRegular():
-			m.logger.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug(fmt.Sprintf("migrate read %s", path))
 			fh, err := fsys.Open(path)
 			if err != nil {
 				return err
@@ -141,12 +140,12 @@ func (m *Migrate) Dir(dir string) error {
 
 		switch mode := info.Mode(); {
 		case mode.IsRegular() && mode.Perm()&ModeExecutable != 0:
-			m.logger.Debug("execute", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug(fmt.Sprintf("migrate execute %s", path))
 			if err = m.execute(path, m.nameFunc(path)); err != nil {
 				return err
 			}
 		case mode.IsRegular():
-			m.logger.Debug("read", "name", filepath.Base(path), "path", filepath.Dir(path))
+			m.logger.Debug(fmt.Sprintf("migrate read %s", path))
 			if err := m.open(path); err != nil {
 				return err
 			}
